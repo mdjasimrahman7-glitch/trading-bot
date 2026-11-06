@@ -9,6 +9,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
+# ================= ACCOUNT CONFIGURATION =================
 ACCOUNTS = [  
     {
         "name": "kh2 fb7",
@@ -39,9 +40,8 @@ ACCOUNTS = [
 LOGIN_URL = "https://www.zenquantai.com/#/pages/login/login"
 TRADE_URL = "https://www.zenquantai.com/#/pages/UITransaction/trade"
 WAIT_AFTER_INJECT = 10
-DEFAULT_FALLBACK_WAIT = 7200
+DEFAULT_FALLBACK_WAIT = 3600
 
-account_schedules = {}
 recent_claim_history = []
 
 def format_time(seconds):
@@ -79,24 +79,6 @@ def parse_remaining_seconds(text):
         total_sec += int(s_match.group(1))
 
     return total_sec
-
-def dynamic_countdown(target_time, target_account_name):
-    while True:
-        now = datetime.now()
-        remaining = (target_time - now).total_seconds()
-        if remaining <= 0:
-            print("\n" + "=" * 65)
-            print(f"⏰ TIME UP FOR: {target_account_name} | STARTING ACTION...")
-            print("=" * 65 + "\n")
-            break
-
-        history_str = " | ".join(recent_claim_history[-2:])
-        if not history_str:
-            history_str = "None yet"
-
-        time_str = format_time(remaining)
-        print(f"\r⏳ Next: [{target_account_name}] in {time_str} | 📋 Recent: [{history_str}]", end="", flush=True)
-        time.sleep(1)
 
 def setup_driver():
     options = webdriver.ChromeOptions()
@@ -330,20 +312,20 @@ def perform_injection(driver, wait, duration="Plus", account_name=""):
 def run_account_cycle(account):
     driver = setup_driver()
     if not driver:
-        return DEFAULT_FALLBACK_WAIT
+        return
 
     wait = WebDriverWait(driver, 20)
-    remaining_wait = DEFAULT_FALLBACK_WAIT
     account_name = account["name"]
 
     try:
+        print(f"\n--- Starting session for: {account_name} ---")
         driver.get(LOGIN_URL)
         time.sleep(2)
         handle_activity_notice(driver)
 
         if not login(driver, wait, account["phone"], account["password"], account.get("country_code", "+880")):
             print(f"❌ Login failed for {account_name}")
-            return 300
+            return
 
         if "/pages/UITransaction/trade" not in driver.current_url:
             driver.get(TRADE_URL)
@@ -355,46 +337,28 @@ def run_account_cycle(account):
         perform_injection(driver, wait, "3Hours", account_name)
         drain_all_claims(driver, wait, account_name, max_loops=3)
 
-        time.sleep(2)
-        remaining_wait = check_and_get_card_timers(driver)
-        if remaining_wait == 0:
-            remaining_wait = DEFAULT_FALLBACK_WAIT
-
-        print(f"✅ [{account_name}] Processed. Next action in: {format_time(remaining_wait)}")
+        print(f"✅ [{account_name}] Cycle completed successfully.")
     except Exception as e:
         print(f"⚠️ Error processing {account_name}: {e}")
-        remaining_wait = 300
     finally:
         try:
             driver.quit()
         except Exception:
             pass
 
-    return remaining_wait
-
 def main():
     print("=" * 65)
-    print("🚀 SMART DYNAMIC SCHEDULER STARTED (CHROME VERSION)")
+    print("🚀 SEQUENTIAL MULTI-ACCOUNT TRADING BOT STARTED")
     print("=" * 65)
-    print("🔍 Initializing & inspecting all accounts schedule...\n")
     
-    for acc in ACCOUNTS:
-        wait_sec = run_account_cycle(acc)
-        account_schedules[acc["name"]] = {
-            "account": acc,
-            "next_run": datetime.now() + timedelta(seconds=wait_sec),
-        }
-
     while True:
-        sorted_accounts = sorted(account_schedules.values(), key=lambda x: x["next_run"])
-        earliest = sorted_accounts[0]
-        target_acc = earliest["account"]
-        target_time = earliest["next_run"]
-        target_name = target_acc["name"]
-
-        dynamic_countdown(target_time, target_name)
-        next_sec = run_account_cycle(target_acc)
-        account_schedules[target_name]["next_run"] = datetime.now() + timedelta(seconds=next_sec)
+        print("\n" + "🔄 Beginning new execution round for all accounts..." + "\n")
+        for acc in ACCOUNTS:
+            run_account_cycle(acc)
+            time.sleep(5)
+            
+        print("\n💤 All accounts finished. Waiting 2 hours for the next cycle...")
+        time.sleep(7200)
 
 if __name__ == "__main__":
     try:
